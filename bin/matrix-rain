@@ -1,44 +1,155 @@
 #!/usr/bin/env python3
-"""Matrix digital rain for a terminal. Exits on any key or mouse activity."""
-import os, random, select, shutil, signal, subprocess, sys, termios, time, tty
+"""Matrix digital rain for a terminal. Exits on any key or mouse activity.
 
-CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789:.=*+-<>¦|"
+Reads ~/.config/matrix-screensaver/config (key=value lines):
+  speed=1..10        fall speed (default 5)
+  charset=katakana|latin|binary|hex|klingon|omarchy|text|custom
+  custom=<string>    used by charset=text (spelled out in order) and
+                     charset=custom (random characters from the string)
+  color=green|cyan|blue|purple|pink|red|amber|white|rainbow|#rrggbb
+"""
+import colorsys, os, random, select, shutil, signal, subprocess, sys, termios, time, tty
+
+CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+                      "matrix-screensaver", "config")
 FPS = 30
 TRAIL = (12, 35)
-# Head is white; trail fades through greens (256-color codes).
-FADE = [231, 120, 46, 40, 34, 28, 22]
+LEVELS = 12  # level 0 = head (white); 1..LEVELS-1 fade from bright to dim
+
+KATAKANA = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789:.=*+-<>¦|"
+# pIqaD in the ConScript Unicode Registry range: letters U+F8D0-F8E9, digits U+F8F0-F8F9.
+# Needs a pIqaD font (installer fetches "pIqaD qolqoS").
+KLINGON_PIQAD = "".join(chr(c) for c in list(range(0xF8D0, 0xF8EA)) + list(range(0xF8F0, 0xF8FA)))
+KLINGON_LATIN = "abchDeghHIjlmnngopqQrStlhuvwy'"  # transliteration fallback without the font
+CHARSETS = {
+    "katakana": KATAKANA,
+    "latin": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    "binary": "01",
+    "hex": "0123456789ABCDEF",
+}
+COLORS = {
+    "green": (0, 255, 65), "cyan": (0, 230, 255), "blue": (40, 110, 255),
+    "purple": (170, 80, 255), "pink": (255, 80, 200), "red": (255, 40, 40),
+    "amber": (255, 176, 0), "white": (235, 235, 235),
+}
 
 
-def color(i, n):
-    if i == 0:
-        return FADE[0]
-    idx = 1 + int((i - 1) / max(1, n - 1) * (len(FADE) - 2))
-    return FADE[min(idx, len(FADE) - 1)]
+def load_config():
+    cfg = {}
+    try:
+        with open(CONFIG) as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.rstrip("\n").split("=", 1)
+                    cfg[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return cfg
+
+
+def has_piqad_font():
+    try:
+        r = subprocess.run(["fc-list", ":charset=f8d0", "family"], capture_output=True, text=True, timeout=3)
+        return "piqad" in r.stdout.lower()
+    except Exception:
+        return False
+
+
+def pick_glyphs(cfg):
+    """Return (pool, sequence). Exactly one is non-empty."""
+    name = cfg.get("charset", "katakana")
+    custom = cfg.get("custom", "")
+    if name == "omarchy":
+        return "", "OMARCHY"
+    if name == "text" and custom:
+        return "", custom
+    if name == "custom" and custom:
+        return custom, ""
+    if name == "klingon":
+        return (KLINGON_PIQAD if has_piqad_font() else KLINGON_LATIN), ""
+    return CHARSETS.get(name, KATAKANA), ""
+
+
+def parse_color(spec):
+    spec = (spec or "green").strip().lower()
+    if spec == "rainbow":
+        return "rainbow"
+    if spec.startswith("#") and len(spec) == 7:
+        try:
+            return tuple(int(spec[i:i + 2], 16) for i in (1, 3, 5))
+        except ValueError:
+            pass
+    return COLORS.get(spec, COLORS["green"])
+
+
+def fade_rgb(base, level):
+    """level 1 = bright tint of base, down to a dim version at LEVELS-1."""
+    if level == 0:
+        return (255, 255, 255)
+    t = (level - 1) / max(1, LEVELS - 2)       # 0..1 along the trail
+    scale = 1.0 - 0.88 * t
+    mix = 0.45 * (1 - t) ** 2                   # whiten the first few levels
+    return tuple(int(min(255, (c + (255 - c) * mix) * scale)) for c in base)
+
+
+def sgr(rgb):
+    return "\033[38;2;%d;%d;%dm" % rgb
+
+
+def build_palette(color):
+    """Returns fn(level, col, i, frame) -> escape string."""
+    if color == "rainbow":
+        steps = 120
+        table = []
+        for h in range(steps):
+            base = tuple(int(x * 255) for x in colorsys.hsv_to_rgb(h / steps, 1.0, 1.0))
+            table.append([sgr(fade_rgb(base, lv)) for lv in range(LEVELS)])
+        return lambda lv, col, i, frame: table[(col * 2 + i + frame // 2) % steps][lv]
+    fixed = [sgr(fade_rgb(color, lv)) for lv in range(LEVELS)]
+    return lambda lv, col, i, frame: fixed[lv]
 
 
 class Drop:
-    def __init__(self, rows):
-        self.rows = rows
+    def __init__(self, rows, speed_mult, pool, seq):
+        self.rows, self.mult, self.pool, self.seq = rows, speed_mult, pool, seq
         self.reset(initial=True)
 
     def reset(self, initial=False):
         self.len = random.randint(*TRAIL)
         self.y = random.randint(-self.rows, 0) if initial else -random.randint(0, self.rows // 2)
-        self.speed = random.uniform(0.25, 1.0)  # rows per frame
+        self.speed = random.uniform(0.25, 1.0) * self.mult  # rows per frame
         self.acc = 0.0
         self.glyphs = {}
+        self.k = random.randrange(len(self.seq)) if self.seq else 0
+        self.erased = self.y - self.len  # last row already blanked
+
+    def next_char(self):
+        if self.seq:
+            ch = self.seq[self.k % len(self.seq)]
+            self.k += 1
+            return ch
+        return random.choice(self.pool)
 
     def step(self):
         self.acc += self.speed
         while self.acc >= 1:
             self.acc -= 1
             self.y += 1
-            self.glyphs[self.y] = random.choice(CHARS)
+            self.glyphs[self.y] = self.next_char()
         if self.y - self.len > self.rows:
             self.reset()
 
 
 def main():
+    cfg = load_config()
+    try:
+        speed = max(1, min(10, int(float(cfg.get("speed", "5")))))
+    except ValueError:
+        speed = 5
+    mult = speed / 5.0
+    pool, seq = pick_glyphs(cfg)
+    palette = build_palette(parse_color(cfg.get("color")))
+
     out = sys.stdout
     # Read input from the controlling tty: when started in the background by
     # omarchy-screensaver, stdin is /dev/null.
@@ -76,16 +187,16 @@ def main():
     out.write("\033[?1049h\033[?25l\033]11;rgb:00/00/00\007\033[?1003h\033[?1006h")
     hide_cursor(True)
     armed_at = time.time() + 0.5  # ignore input right after launch
-    cols = rows = 0
+    cols = rows = frame = 0
     drops = []
     try:
         while True:
             t0 = time.time()
+            frame += 1
             if resized[0]:
                 resized[0] = False
                 cols, rows = shutil.get_terminal_size()
-                ncol = cols // 2  # halfwidth katakana: use every other column
-                drops = [Drop(rows) for _ in range(ncol)]
+                drops = [Drop(rows, mult, pool, seq) for _ in range(cols // 2)]  # every other column
                 out.write("\033[2J")
             if select.select([fd], [], [], 0)[0]:
                 os.read(fd, 1024)
@@ -101,13 +212,16 @@ def main():
                         ch = d.glyphs.get(r)
                         if ch is None:
                             continue
-                        if i > 0 and random.random() < 0.01:
-                            ch = d.glyphs[r] = random.choice(CHARS)
-                        buf.append(f"\033[{r+1};{x}H\033[38;5;{color(i, d.len)}m{ch}")
-                # erase the cell just past the tail
-                r = d.y - d.len
-                if 0 <= r < rows:
-                    buf.append(f"\033[{r+1};{x}H  ")
+                        if pool and i > 0 and random.random() < 0.01:
+                            ch = d.glyphs[r] = random.choice(pool)
+                        lv = 0 if i == 0 else 1 + (i - 1) * (LEVELS - 2) // max(1, d.len - 1)
+                        buf.append(f"\033[{r+1};{x}H{palette(lv, c, i, frame)}{ch}")
+                # blank every row the tail has passed since last frame
+                tail = d.y - d.len
+                for r in range(d.erased + 1, tail + 1):
+                    if 0 <= r < rows:
+                        buf.append(f"\033[{r+1};{x}H ")
+                d.erased = max(d.erased, tail)
             out.write("".join(buf))
             out.flush()
             time.sleep(max(0, 1 / FPS - (time.time() - t0)))

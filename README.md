@@ -14,11 +14,28 @@ Remove with `./uninstall.sh`.
 
 ## Settings
 
-- Idle time: minutes of inactivity before the screensaver starts. Written to `idle.screensaver` (seconds) in `~/.config/omarchy/shell.json`, which the Omarchy shell hot-reloads. If the lock time would not come after it, lock is moved to screensaver + 150s.
-- Matrix mode: on = Omarchy's idle screensaver shows Matrix rain; off = stock Omarchy effects.
-- Preview: starts the screensaver immediately.
+Open "Matrix Screensaver" from the launcher (or run `matrix-screensaver-config`). Pick one setting, change it, and the menu closes immediately with a notification.
 
-Any key or mouse movement closes it on all monitors.
+- Idle time: minutes of inactivity before the screensaver starts. Written to `idle.screensaver` in `~/.config/omarchy/shell.json`, which the Omarchy shell hot-reloads. If lock would not come after it, lock moves to screensaver + 150s.
+- Rain speed: 1 (slow) to 10 (fast).
+- Characters: katakana (classic), Latin, binary, hex, Klingon (pIqaD), the word OMARCHY, your own text spelled down the columns, or random characters from your own string.
+- Colour: green, cyan, blue, purple, pink, red, amber, white, rainbow, or any `#rrggbb`.
+- Matrix mode: on = Omarchy's idle screensaver shows Matrix rain; off = stock Omarchy effects.
+- Preview now.
+
+Settings are stored in `~/.config/matrix-screensaver/config` (plain `key=value`, read each time the screensaver starts). Any key or mouse movement closes the screensaver on all monitors.
+
+## Fonts
+
+`./install.sh` checks for and offers to install:
+
+- a Nerd Font (`ttf-jetbrains-mono-nerd` via pacman, sudo),
+- a font with katakana glyphs (`noto-fonts-cjk` via pacman, sudo),
+- pIqaD qolqoS for Klingon (SIL OFL, downloaded to `~/.local/share/fonts/matrix-screensaver`, no sudo).
+
+pIqaD uses Unicode Private Use code points U+F8D0-F8FF, which some Nerd Fonts also use for icons. When that clash exists the installer adds a small fontconfig rule (`~/.config/fontconfig/conf.d/60-matrix-screensaver-piqad.conf`) so pIqaD wins after JetBrainsMono Nerd Font. Without the font, Klingon falls back to Latin transliteration.
+
+Options: `--yes` install everything without asking, `--no-fonts` skip the check, `--fonts` only run the font step.
 
 ## How it hooks in
 

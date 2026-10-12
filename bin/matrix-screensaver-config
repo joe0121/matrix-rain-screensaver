@@ -3,10 +3,12 @@
 
 - Idle time: writes idle.screensaver (seconds) in ~/.config/omarchy/shell.json.
   The Omarchy shell hot-reloads that file, so it applies immediately.
-- Matrix mode: toggles whether Omarchy's screensaver shows Matrix rain
-  (see the `ttfx` shim) or the stock Omarchy effects.
+- Everything else (Matrix mode, speed, characters, colour) lives in
+  ~/.config/matrix-screensaver/config, read by matrix-rain at start.
+
+Every change is saved and the menu exits immediately.
 """
-import json, os, shutil, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys
 
 HOME = os.path.expanduser("~")
 SHELL_JSON = os.path.join(HOME, ".config/omarchy/shell.json")
@@ -85,17 +87,41 @@ def set_idle(ss):
     return idle["screensaver"], idle["lock"]
 
 
-def matrix_on():
+DEFAULTS = {"matrix": "on", "speed": "5", "charset": "katakana", "custom": "", "color": "green"}
+
+CHARSETS = {
+    "Katakana (classic)": "katakana",
+    "Latin letters and digits": "latin",
+    "Binary (0 and 1)": "binary",
+    "Hex": "hex",
+    "Klingon (pIqaD)": "klingon",
+    "The word OMARCHY": "omarchy",
+    "Spell my own text": "text",
+    "Random characters from my own string": "custom",
+}
+COLORS = ["green", "cyan", "blue", "purple", "pink", "red", "amber", "white", "rainbow"]
+
+
+def load():
+    cfg = dict(DEFAULTS)
     try:
-        return "matrix=on" in open(CONF).read().split()
+        with open(CONF) as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.rstrip("\n").split("=", 1)
+                    cfg[k.strip()] = v.strip()
     except FileNotFoundError:
-        return False
+        pass
+    return cfg
 
 
-def set_matrix(on):
+def save(cfg):
     os.makedirs(CONF_DIR, exist_ok=True)
-    with open(CONF, "w") as f:
-        f.write(f"matrix={'on' if on else 'off'}\n")
+    tmp = CONF + ".tmp"
+    with open(tmp, "w") as f:
+        for k in DEFAULTS:
+            f.write(f"{k}={cfg.get(k, DEFAULTS[k]).replace(chr(10), ' ')}\n")
+    os.replace(tmp, CONF)
 
 
 def fmt(sec):
@@ -111,40 +137,112 @@ def parse_minutes(text):
     return sec if 10 <= sec <= 24 * 3600 else None
 
 
+def notify(msg):
+    if shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", "-a", "Matrix Screensaver", "Matrix Screensaver", msg],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def piqad_installed():
+    r = subprocess.run(["fc-list", ":charset=f8d0", "family"], capture_output=True, text=True)
+    return bool(r.stdout.strip())
+
+
+def charset_label(cfg):
+    name = cfg["charset"]
+    lab = next((k for k, v in CHARSETS.items() if v == name), name)
+    if name in ("text", "custom"):
+        lab += f' "{cfg["custom"]}"'
+    return lab
+
+
 def main():
-    while True:
-        ss, lock = get_idle()
-        os.system("clear")
-        print("Matrix Screensaver settings\n")
-        print(f"  Matrix mode : {'ON' if matrix_on() else 'off (stock Omarchy effects)'}")
-        print(f"  Starts after: {fmt(ss)} idle")
-        print(f"  Screen locks: {fmt(lock)} idle\n")
-        pick = choose("What do you want to change?", [
-            "Set idle time before screensaver",
-            "Toggle Matrix mode",
-            "Preview now",
-            "Quit",
-        ])
-        if pick in (None, "Quit"):
+    cfg = load()
+    ss, lock = get_idle()
+    os.system("clear")
+    print("Matrix Screensaver settings\n")
+    print(f"  Matrix mode : {'ON' if cfg['matrix'] == 'on' else 'off (stock Omarchy effects)'}")
+    print(f"  Starts after: {fmt(ss)} idle (locks at {fmt(lock)})")
+    print(f"  Speed       : {cfg['speed']}/10")
+    print(f"  Characters  : {charset_label(cfg)}")
+    print(f"  Colour      : {cfg['color']}\n")
+
+    pick = choose("What do you want to change?", [
+        "Idle time before screensaver",
+        "Rain speed",
+        "Characters",
+        "Colour",
+        "Toggle Matrix mode",
+        "Preview now",
+        "Quit",
+    ])
+    if pick in (None, "Quit"):
+        return
+
+    if pick.startswith("Idle"):
+        v = ask("Minutes of inactivity (e.g. 2.5):", f"{ss / 60:g}")
+        if v is None:
             return
-        if pick.startswith("Set idle"):
-            v = ask("Minutes of inactivity (e.g. 2.5):", f"{ss / 60:g}")
-            sec = parse_minutes(v) if v is not None else None
-            if v is None:
-                continue
-            if sec is None:
-                say("Enter a number between 0.17 (10s) and 1440 minutes.")
-            else:
-                ss, lock = set_idle(sec)
-                say(f"Saved: screensaver after {fmt(ss)}, lock after {fmt(lock)}.")
-            time.sleep(1.5)
-        elif pick.startswith("Toggle"):
-            set_matrix(not matrix_on())
-            say(f"Matrix mode {'ON' if matrix_on() else 'off'}.")
-            time.sleep(1)
-        elif pick.startswith("Preview"):
-            subprocess.Popen(["omarchy-launch-screensaver", "force"], start_new_session=True)
+        sec = parse_minutes(v)
+        if sec is None:
+            notify("Idle time not changed: enter 0.17 (10s) to 1440 minutes.")
             return
+        ss, lock = set_idle(sec)
+        notify(f"Starts after {fmt(ss)} idle, locks after {fmt(lock)}.")
+        return
+
+    if pick.startswith("Rain"):
+        v = choose("Speed (1 = slow, 10 = fast)", [str(i) for i in range(1, 11)]) if not HAVE_GUM else \
+            gum("choose", "--header", "Speed (1 = slow, 10 = fast)", "--selected", cfg["speed"],
+                *[str(i) for i in range(1, 11)])
+        if v:
+            cfg["speed"] = v
+            save(cfg)
+            notify(f"Speed set to {v}/10.")
+        return
+
+    if pick == "Characters":
+        v = choose("Character set", list(CHARSETS))
+        if not v:
+            return
+        name = CHARSETS[v]
+        if name in ("text", "custom"):
+            prompt = "Text to spell out:" if name == "text" else "Characters to use:"
+            t = ask(prompt, cfg["custom"])
+            if not t or not t.strip():
+                return
+            cfg["custom"] = t.strip()
+        cfg["charset"] = name
+        save(cfg)
+        extra = ""
+        if name == "klingon" and not piqad_installed():
+            extra = " pIqaD font not installed: rerun ./install.sh --fonts (using Latin letters for now)."
+        notify(f"Characters: {charset_label(cfg)}.{extra}")
+        return
+
+    if pick == "Colour":
+        v = choose("Colour", COLORS + ["custom hex (#rrggbb)"])
+        if not v:
+            return
+        if v.startswith("custom"):
+            v = (ask("Hex colour:", "#00ff41") or "").strip()
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+                notify("Colour not changed: use the form #rrggbb.")
+                return
+        cfg["color"] = v.lower()
+        save(cfg)
+        notify(f"Colour: {cfg['color']}.")
+        return
+
+    if pick.startswith("Toggle"):
+        cfg["matrix"] = "off" if cfg["matrix"] == "on" else "on"
+        save(cfg)
+        notify(f"Matrix mode {cfg['matrix']}.")
+        return
+
+    if pick.startswith("Preview"):
+        subprocess.Popen(["omarchy-launch-screensaver", "force"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 if __name__ == "__main__":
