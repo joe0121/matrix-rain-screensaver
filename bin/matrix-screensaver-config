@@ -76,6 +76,18 @@ def get_idle():
     return int(idle.get("screensaver", DEFAULT_SS)), int(idle.get("lock", DEFAULT_LOCK))
 
 
+def set_lock(sec):
+    """Set idle.lock (seconds). Returns (ok, screensaver, lock)."""
+    cfg = read_shell()
+    idle = cfg.setdefault("idle", {})
+    ss = int(idle.get("screensaver", DEFAULT_SS))
+    if sec <= ss:
+        return False, ss, int(idle.get("lock", DEFAULT_LOCK))
+    idle["lock"] = sec
+    write_shell(cfg)
+    return True, ss, sec
+
+
 def set_idle(ss):
     cfg = read_shell()
     idle = cfg.setdefault("idle", {})
@@ -176,10 +188,11 @@ def one_round():
     print(f"  Characters  : {charset_label(cfg)}")
     print(f"  Colour      : {cfg['color']}\n")
     if LAST[0]:
-        say("  \u2713 " + LAST[0] + "\n")
+        say(("  \u2717 " if "not changed" in LAST[0] else "  \u2713 ") + LAST[0] + "\n")
 
     pick = choose("What do you want to change?", [
         "Idle time before screensaver",
+        "Idle time before lock screen",
         "Rain speed",
         "Characters",
         "Colour",
@@ -189,6 +202,19 @@ def one_round():
     ])
     if pick in (None, "Quit"):
         return False
+
+    if pick == "Idle time before lock screen":
+        v = ask("Minutes of inactivity before locking (e.g. 10):", f"{lock / 60:g}")
+        if v is None:
+            return True
+        sec = parse_minutes(v)
+        if sec is None:
+            status("Lock time not changed: enter 0.17 (10s) to 1440 minutes.")
+            return True
+        ok, ss, lock = set_lock(sec)
+        status(f"Locks after {fmt(lock)} idle." if ok else
+               f"Lock time not changed: it must be later than the screensaver ({fmt(ss)}).")
+        return True
 
     if pick.startswith("Idle"):
         v = ask("Minutes of inactivity (e.g. 2.5):", f"{ss / 60:g}")

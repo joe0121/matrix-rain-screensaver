@@ -17,6 +17,7 @@ Remove with `./uninstall.sh`.
 Open "Matrix Screensaver" from the launcher (or run `matrix-screensaver-config`). Each change is saved and applied immediately and the menu stays open (with a confirmation line) until you choose Quit.
 
 - Idle time: minutes of inactivity before the screensaver starts. Written to `idle.screensaver` in `~/.config/omarchy/shell.json`, which the Omarchy shell hot-reloads. If lock would not come after it, lock moves to screensaver + 150s.
+- Lock time: minutes of inactivity before the lock screen (`idle.lock`); must be later than the screensaver time.
 - Rain speed: 1 (slow) to 10 (fast).
 - Characters: katakana (classic), Latin, binary, hex, Klingon (pIqaD), the word OMARCHY, your own text spelled down the columns, or random characters from your own string.
 - Colour: green, cyan, blue, purple, pink, red, amber, white, rainbow, or any `#rrggbb`.
@@ -24,6 +25,10 @@ Open "Matrix Screensaver" from the launcher (or run `matrix-screensaver-config`)
 - Preview now.
 
 Settings are stored in `~/.config/matrix-screensaver/config` (plain `key=value`, read each time the screensaver starts). Any key or mouse movement closes the screensaver on all monitors.
+
+## Lock screen
+
+The lock screen cannot show the rain. Omarchy's lock is a Wayland session lock (the screensaver window is hidden while locked) drawn by a first-party authentication plugin that third-party code cannot replace, and it only draws a blurred wallpaper behind the password field. The screensaver runs until the lock time, then Omarchy's lock takes over.
 
 ## Fonts
 
