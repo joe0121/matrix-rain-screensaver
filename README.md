@@ -14,7 +14,7 @@ Remove with `./uninstall.sh`.
 
 ## Settings
 
-Open "Matrix Screensaver" from the launcher (or run `matrix-screensaver-config`). Pick one setting, change it, and the menu closes immediately with a notification.
+Open "Matrix Screensaver" from the launcher (or run `matrix-screensaver-config`). Each change is saved and applied immediately and the menu stays open (with a confirmation line) until you choose Quit.
 
 - Idle time: minutes of inactivity before the screensaver starts. Written to `idle.screensaver` in `~/.config/omarchy/shell.json`, which the Omarchy shell hot-reloads. If lock would not come after it, lock moves to screensaver + 150s.
 - Rain speed: 1 (slow) to 10 (fast).
