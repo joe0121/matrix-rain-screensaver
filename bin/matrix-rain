@@ -54,7 +54,12 @@ def main():
         subprocess.run(["hyprctl", "eval", "hl.config({ cursor = { invisible = %s } })" % ("true" if v else "false")],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    done = [False]
+
     def cleanup(*_):
+        if done[0]:
+            return
+        done[0] = True
         hide_cursor(False)
         # close the savers on every monitor (foot windows share this app-id)
         subprocess.run(["pkill", "-f", "[o]rg.omarchy.screensaver"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -59,8 +59,9 @@ def read_shell():
 
 def write_shell(cfg):
     os.makedirs(os.path.dirname(SHELL_JSON), exist_ok=True)
-    if os.path.exists(SHELL_JSON):
-        shutil.copy2(SHELL_JSON, f"{SHELL_JSON}.bak.matrix")
+    bak = f"{SHELL_JSON}.bak.matrix"
+    if os.path.exists(SHELL_JSON) and not os.path.exists(bak):  # keep the original, not the latest
+        shutil.copy2(SHELL_JSON, bak)
     tmp = SHELL_JSON + ".tmp"
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)

@@ -1,6 +1,6 @@
 # matrix-rain-screensaver
 
-Matrix digital-rain screensaver for Wayland, built for Omarchy / Hyprland. Pure Python, no dependencies beyond a terminal (foot, Alacritty, Ghostty or Kitty) and `gum` for the settings menu.
+Matrix digital-rain screensaver for Wayland, built for Omarchy / Hyprland. The renderer is pure Python; the launcher needs `hyprctl`, `jq`, `socat` and `foot`, and the settings menu uses `gum` if present (plain prompts otherwise).
 
 ## Install
 

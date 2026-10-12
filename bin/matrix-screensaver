@@ -5,6 +5,8 @@
 
 pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
 
+rain="$(dirname "$(readlink -f "$0")")/matrix-rain"
+
 focus() { hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 || hyprctl dispatch focusmonitor "$1" >/dev/null; }
 run() {
   local c; printf -v c '%q ' "$@"
@@ -17,7 +19,7 @@ exec {ev}< <(socat -U - "UNIX-CONNECT:$SOCK")
 
 for m in $(hyprctl monitors -j | jq -r '.[].name'); do
   focus "$m"
-  run foot --app-id=org.omarchy.screensaver --config=/usr/share/omarchy/default/foot/screensaver.ini -e "$HOME/.local/bin/matrix-rain"
+  run foot --app-id=org.omarchy.screensaver --config=/usr/share/omarchy/default/foot/screensaver.ini -e "$rain"
   deadline=$((SECONDS + 5))
   while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$ev" line; do
     [[ $line == openwindow\>\>*,org.omarchy.screensaver,* ]] && break
