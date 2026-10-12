@@ -1,0 +1,32 @@
+#!/bin/bash
+# Shim installed ahead of the real `ttfx` in PATH. When Matrix mode is on,
+# Omarchy's screensaver (which calls `ttfx ... --random-effect`) runs matrix-rain
+# instead; every other invocation passes straight through to the real ttfx.
+# That keeps Omarchy's idle timer, lock handling, multi-monitor launch and
+# dismissal logic working unchanged.
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/matrix-screensaver/config"
+self=$(readlink -f "$0")
+
+if grep -qx 'matrix=on' "$CONFIG" 2>/dev/null; then
+  for a in "$@"; do
+    if [[ $a == --random-effect ]]; then
+      # Do not exec: omarchy-screensaver watches for a process *named* ttfx
+      # (pgrep -x ttfx) and respawns it when none is found, so this wrapper
+      # has to stay alive as `ttfx` while matrix-rain runs as its child.
+      "$(dirname "$self")/matrix-rain" &
+      child=$!
+      trap 'kill "$child" 2>/dev/null' TERM INT HUP
+      wait "$child"
+      exit 0
+    fi
+  done
+fi
+
+IFS=: read -ra dirs <<<"$PATH"
+for d in "${dirs[@]}"; do
+  c="$d/ttfx"
+  [[ -x $c && $(readlink -f "$c") != "$self" ]] && exec "$c" "$@"
+done
+echo "ttfx: real ttfx not found in PATH" >&2
+exit 127

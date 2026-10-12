@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=Matrix Screensaver
+Comment=Preview the Matrix digital rain screensaver
+Exec=@BIN@/matrix-screensaver
+Terminal=false
+Type=Application
+Icon=preferences-desktop-screensaver
+Categories=Utility;
+StartupNotify=false

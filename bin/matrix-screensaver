@@ -1,0 +1,26 @@
+#!/bin/bash
+# Matrix rain fullscreen on every Hyprland monitor (Wayland, foot).
+# Reuses Omarchy's screensaver app-id so its window rule makes it fullscreen.
+# Any key/mouse input in any instance closes all of them.
+
+pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
+
+focus() { hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 || hyprctl dispatch focusmonitor "$1" >/dev/null; }
+run() {
+  local c; printf -v c '%q ' "$@"
+  hyprctl dispatch "hl.dsp.exec_cmd([[$c]])" >/dev/null 2>&1 || hyprctl dispatch exec -- bash -lc "$c" >/dev/null
+}
+
+focused=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
+SOCK="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+exec {ev}< <(socat -U - "UNIX-CONNECT:$SOCK")
+
+for m in $(hyprctl monitors -j | jq -r '.[].name'); do
+  focus "$m"
+  run foot --app-id=org.omarchy.screensaver --config=/usr/share/omarchy/default/foot/screensaver.ini -e "$HOME/.local/bin/matrix-rain"
+  deadline=$((SECONDS + 5))
+  while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$ev" line; do
+    [[ $line == openwindow\>\>*,org.omarchy.screensaver,* ]] && break
+  done
+done
+focus "$focused"

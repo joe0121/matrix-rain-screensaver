@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=Matrix Screensaver Settings
+Comment=Set the idle time and mode for the Matrix screensaver
+Exec=xdg-terminal-exec --app-id=TUI.float -e @BIN@/matrix-screensaver-config
+Terminal=false
+Type=Application
+Icon=preferences-desktop-screensaver
+Categories=Settings;Utility;
+StartupNotify=true

@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Settings TUI for the Matrix screensaver (Omarchy / Hyprland).
+
+- Idle time: writes idle.screensaver (seconds) in ~/.config/omarchy/shell.json.
+  The Omarchy shell hot-reloads that file, so it applies immediately.
+- Matrix mode: toggles whether Omarchy's screensaver shows Matrix rain
+  (see the `ttfx` shim) or the stock Omarchy effects.
+"""
+import json, os, shutil, subprocess, sys, time
+
+HOME = os.path.expanduser("~")
+SHELL_JSON = os.path.join(HOME, ".config/omarchy/shell.json")
+CONF_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", HOME + "/.config"), "matrix-screensaver")
+CONF = os.path.join(CONF_DIR, "config")
+DEFAULT_SS, DEFAULT_LOCK, LOCK_GAP = 150, 300, 150
+HAVE_GUM = shutil.which("gum") is not None
+
+
+def gum(*args, capture=True):
+    r = subprocess.run(["gum", *args], stdout=subprocess.PIPE if capture else None, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def choose(header, options):
+    if HAVE_GUM:
+        return gum("choose", "--header", header, *options)
+    print(header)
+    for i, o in enumerate(options, 1):
+        print(f"  {i}) {o}")
+    try:
+        return options[int(input("> ")) - 1]
+    except (ValueError, IndexError, EOFError):
+        return None
+
+
+def ask(prompt, value=""):
+    if HAVE_GUM:
+        return gum("input", "--prompt", prompt + " ", "--value", value)
+    try:
+        return input(f"{prompt} [{value}] ").strip() or value
+    except EOFError:
+        return None
+
+
+def say(msg):
+    if HAVE_GUM:
+        gum("style", "--foreground", "46", msg, capture=False)
+    else:
+        print(msg)
+
+
+def read_shell():
+    try:
+        with open(SHELL_JSON) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+def write_shell(cfg):
+    os.makedirs(os.path.dirname(SHELL_JSON), exist_ok=True)
+    if os.path.exists(SHELL_JSON):
+        shutil.copy2(SHELL_JSON, f"{SHELL_JSON}.bak.matrix")
+    tmp = SHELL_JSON + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, SHELL_JSON)
+
+
+def get_idle():
+    idle = read_shell().get("idle", {})
+    return int(idle.get("screensaver", DEFAULT_SS)), int(idle.get("lock", DEFAULT_LOCK))
+
+
+def set_idle(ss):
+    cfg = read_shell()
+    idle = cfg.setdefault("idle", {})
+    lock = int(idle.get("lock", DEFAULT_LOCK))
+    idle["screensaver"] = ss
+    if lock <= ss:  # lock must come after the screensaver
+        idle["lock"] = ss + LOCK_GAP
+    write_shell(cfg)
+    return idle["screensaver"], idle["lock"]
+
+
+def matrix_on():
+    try:
+        return "matrix=on" in open(CONF).read().split()
+    except FileNotFoundError:
+        return False
+
+
+def set_matrix(on):
+    os.makedirs(CONF_DIR, exist_ok=True)
+    with open(CONF, "w") as f:
+        f.write(f"matrix={'on' if on else 'off'}\n")
+
+
+def fmt(sec):
+    m, s = divmod(sec, 60)
+    return f"{m}m {s}s" if m and s else (f"{m}m" if m else f"{s}s")
+
+
+def parse_minutes(text):
+    try:
+        sec = round(float(text.strip().rstrip("m").strip()) * 60)
+    except (ValueError, AttributeError):
+        return None
+    return sec if 10 <= sec <= 24 * 3600 else None
+
+
+def main():
+    while True:
+        ss, lock = get_idle()
+        os.system("clear")
+        print("Matrix Screensaver settings\n")
+        print(f"  Matrix mode : {'ON' if matrix_on() else 'off (stock Omarchy effects)'}")
+        print(f"  Starts after: {fmt(ss)} idle")
+        print(f"  Screen locks: {fmt(lock)} idle\n")
+        pick = choose("What do you want to change?", [
+            "Set idle time before screensaver",
+            "Toggle Matrix mode",
+            "Preview now",
+            "Quit",
+        ])
+        if pick in (None, "Quit"):
+            return
+        if pick.startswith("Set idle"):
+            v = ask("Minutes of inactivity (e.g. 2.5):", f"{ss / 60:g}")
+            sec = parse_minutes(v) if v is not None else None
+            if v is None:
+                continue
+            if sec is None:
+                say("Enter a number between 0.17 (10s) and 1440 minutes.")
+            else:
+                ss, lock = set_idle(sec)
+                say(f"Saved: screensaver after {fmt(ss)}, lock after {fmt(lock)}.")
+            time.sleep(1.5)
+        elif pick.startswith("Toggle"):
+            set_matrix(not matrix_on())
+            say(f"Matrix mode {'ON' if matrix_on() else 'off'}.")
+            time.sleep(1)
+        elif pick.startswith("Preview"):
+            subprocess.Popen(["omarchy-launch-screensaver", "force"], start_new_session=True)
+            return
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

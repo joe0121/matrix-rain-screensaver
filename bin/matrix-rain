@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Matrix digital rain for a terminal. Exits on any key or mouse activity."""
+import os, random, select, shutil, signal, subprocess, sys, termios, time, tty
+
+CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789:.=*+-<>¦|"
+FPS = 30
+TRAIL = (12, 35)
+# Head is white; trail fades through greens (256-color codes).
+FADE = [231, 120, 46, 40, 34, 28, 22]
+
+
+def color(i, n):
+    if i == 0:
+        return FADE[0]
+    idx = 1 + int((i - 1) / max(1, n - 1) * (len(FADE) - 2))
+    return FADE[min(idx, len(FADE) - 1)]
+
+
+class Drop:
+    def __init__(self, rows):
+        self.rows = rows
+        self.reset(initial=True)
+
+    def reset(self, initial=False):
+        self.len = random.randint(*TRAIL)
+        self.y = random.randint(-self.rows, 0) if initial else -random.randint(0, self.rows // 2)
+        self.speed = random.uniform(0.25, 1.0)  # rows per frame
+        self.acc = 0.0
+        self.glyphs = {}
+
+    def step(self):
+        self.acc += self.speed
+        while self.acc >= 1:
+            self.acc -= 1
+            self.y += 1
+            self.glyphs[self.y] = random.choice(CHARS)
+        if self.y - self.len > self.rows:
+            self.reset()
+
+
+def main():
+    out = sys.stdout
+    # Read input from the controlling tty: when started in the background by
+    # omarchy-screensaver, stdin is /dev/null.
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY)
+    except OSError:
+        fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    resized = [True]
+    signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__(0, True))
+
+    def hide_cursor(v):
+        subprocess.run(["hyprctl", "eval", "hl.config({ cursor = { invisible = %s } })" % ("true" if v else "false")],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def cleanup(*_):
+        hide_cursor(False)
+        # close the savers on every monitor (foot windows share this app-id)
+        subprocess.run(["pkill", "-f", "[o]rg.omarchy.screensaver"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        out.write("\033[?1003l\033[?1006l\033[?25h\033[?1049l\033[0m")
+        out.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        sys.exit(0)
+
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, cleanup)
+
+    tty.setcbreak(fd)
+    # alt screen, hide cursor, black bg, mouse tracking (any motion) to exit on mouse
+    out.write("\033[?1049h\033[?25l\033]11;rgb:00/00/00\007\033[?1003h\033[?1006h")
+    hide_cursor(True)
+    armed_at = time.time() + 0.5  # ignore input right after launch
+    cols = rows = 0
+    drops = []
+    try:
+        while True:
+            t0 = time.time()
+            if resized[0]:
+                resized[0] = False
+                cols, rows = shutil.get_terminal_size()
+                ncol = cols // 2  # halfwidth katakana: use every other column
+                drops = [Drop(rows) for _ in range(ncol)]
+                out.write("\033[2J")
+            if select.select([fd], [], [], 0)[0]:
+                os.read(fd, 1024)
+                if time.time() > armed_at:
+                    cleanup()
+            buf = []
+            for c, d in enumerate(drops):
+                d.step()
+                x = c * 2 + 1
+                for i in range(d.len):
+                    r = d.y - i
+                    if 0 <= r < rows:
+                        ch = d.glyphs.get(r)
+                        if ch is None:
+                            continue
+                        if i > 0 and random.random() < 0.01:
+                            ch = d.glyphs[r] = random.choice(CHARS)
+                        buf.append(f"\033[{r+1};{x}H\033[38;5;{color(i, d.len)}m{ch}")
+                # erase the cell just past the tail
+                r = d.y - d.len
+                if 0 <= r < rows:
+                    buf.append(f"\033[{r+1};{x}H  ")
+            out.write("".join(buf))
+            out.flush()
+            time.sleep(max(0, 1 / FPS - (time.time() - t0)))
+    finally:
+        cleanup()
+
+
+if __name__ == "__main__":
+    main()
