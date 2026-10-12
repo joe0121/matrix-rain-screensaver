@@ -13,8 +13,9 @@ done
 for f in "$here"/share/applications/*.desktop; do
   sed "s|@BIN@|$bin|g" "$f" >"$apps/$(basename "$f")"
 done
+rm -f "$apps/matrix-screensaver-settings.desktop"  # old separate settings entry
 [[ -f $conf/config ]] || echo "matrix=on" >"$conf/config"
 update-desktop-database "$apps" 2>/dev/null || true
 
 case ":$PATH:" in *":$bin:"*) ;; *) echo "warning: $bin is not in PATH" ;; esac
-echo "Installed. Open 'Matrix Screensaver Settings' from the launcher (or run matrix-screensaver-config)."
+echo "Installed. Open 'Matrix Screensaver' from the launcher (or run matrix-screensaver-config)."

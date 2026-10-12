@@ -1,10 +1,10 @@
 [Desktop Entry]
 Version=1.0
 Name=Matrix Screensaver
-Comment=Preview the Matrix digital rain screensaver
-Exec=@BIN@/matrix-screensaver
+Comment=Set the idle time and mode for the Matrix screensaver
+Exec=xdg-terminal-exec --app-id=TUI.float -e @BIN@/matrix-screensaver-config
 Terminal=false
 Type=Application
 Icon=preferences-desktop-screensaver
-Categories=Utility;
-StartupNotify=false
+Categories=Settings;Utility;
+StartupNotify=true

@@ -8,10 +8,7 @@ Matrix digital-rain screensaver for Wayland, built for Omarchy / Hyprland. The r
     cd matrix-rain-screensaver
     ./install.sh
 
-Installs to `~/.local/bin` and adds two launcher entries (no sudo):
-
-- Matrix Screensaver: preview it now.
-- Matrix Screensaver Settings: floating settings menu (also `matrix-screensaver-config`).
+Installs to `~/.local/bin` and adds one launcher entry (no sudo): Matrix Screensaver, which opens the floating settings menu (also `matrix-screensaver-config`). Preview from inside the menu, or run `matrix-screensaver` directly.
 
 Remove with `./uninstall.sh`.
 
